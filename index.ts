@@ -1,13 +1,24 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { createHash } from "node:crypto"
 import { mkdir, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }
 
-const server: Plugin = async ({ client }, options) => {
-  const dir = join(tmpdir(), "opencode-peek")
+const instructions = (paths: string[], agent: string) =>
+  [
+    `IMPORTANT (peek plugin): the user attached ${paths.length} image(s). You cannot see images, so before you answer, have the image(s) read. The files exist at exactly these paths; use them as written and do not shorten, guess or rewrite them:`,
+    ...paths.map((p) => `- ${p}`),
+    `Do this first, without asking the user: call the task tool with subagent \`${agent}\` and put each path in the prompt as \`@<path>\` (e.g. \`@${paths[0]}\`) so the file is attached, and ask it to describe what you need from the image.`,
+    `If you cannot use the task tool, use any other tool or agent available to you that can read image files, passing the same path(s).`,
+    `Never answer about the image(s) without their content.`,
+  ].join("\n")
+
+const server: Plugin = async ({ client, directory }, options) => {
+  // Inside the project, so agents can read it without an outside-directory permission prompt.
+  const dir = join(directory, ".opencode", "peek")
+  // sessionID -> images not yet handed on, repeated in the system prompt until a tool call uses their path
+  const pending = new Map<string, { paths: string[]; agent: string }>()
   const preferred = typeof options?.agent === "string" ? options.agent : undefined
 
   const supportsImage = async (providerID: string, modelID: string) => {
@@ -40,6 +51,7 @@ const server: Plugin = async ({ client }, options) => {
 
   return {
     "chat.message": async (input, output) => {
+      pending.delete(output.message.sessionID)
       const images = output.parts.filter(
         (p) => p.type === "file" && p.mime.startsWith("image/") && p.url.startsWith("data:"),
       )
@@ -53,6 +65,7 @@ const server: Plugin = async ({ client }, options) => {
       const agent = preferred && candidates.includes(preferred) ? preferred : candidates[0]
 
       await mkdir(dir, { recursive: true })
+      await writeFile(join(dir, ".gitignore"), "*\n")
       const paths: string[] = []
       for (const part of images) {
         if (part.type !== "file") continue
@@ -65,19 +78,24 @@ const server: Plugin = async ({ client }, options) => {
       // opencode keeps its own reference to this array, so mutate it in place
       for (let i = output.parts.length - 1; i >= 0; i--) if (images.includes(output.parts[i])) output.parts.splice(i, 1)
 
+      pending.set(output.message.sessionID, { paths, agent })
       output.parts.push({
         id: `prt_${Date.now().toString(16)}${Math.random().toString(16).slice(2, 14)}`,
         sessionID: output.message.sessionID,
         messageID: output.message.id,
         type: "text",
         synthetic: true,
-        text: [
-          `The user attached ${paths.length} image(s), saved to:`,
-          ...paths.map((p) => `- ${p}`),
-          `The current model cannot view images. Delegate image work via the task tool to the \`${agent}\` subagent,`,
-          `writing each path in the task prompt as \`@<path>\` (e.g. \`@${paths[0]}\`) so it is attached.`,
-        ].join("\n"),
+        text: instructions(paths, agent),
       })
+    },
+    "tool.execute.before": async (input, output) => {
+      const entry = pending.get(input.sessionID)
+      const args = JSON.stringify(output.args ?? {})
+      if (entry?.paths.some((p) => args.includes(p))) pending.delete(input.sessionID)
+    },
+    "experimental.chat.system.transform": async (input, output) => {
+      const entry = input.sessionID ? pending.get(input.sessionID) : undefined
+      if (entry) output.system.push(instructions(entry.paths, entry.agent))
     },
   }
 }
