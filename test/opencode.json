@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "fake/text-model",
+  "small_model": "fake/text-model",
+  "provider": {
+    "fake": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Fake",
+      "options": { "baseURL": "http://127.0.0.1:18999/v1", "apiKey": "x" },
+      "models": {
+        "text-model": { "name": "Text", "modalities": { "input": ["text"], "output": ["text"] }, "tool_call": true },
+        "vision-model": { "name": "Vision", "modalities": { "input": ["text", "image"], "output": ["text"] }, "attachment": true, "tool_call": true }
+      }
+    }
+  },
+  "agent": {
+    "vision": { "mode": "subagent", "model": "fake/vision-model", "description": "Looks at images" }
+  }
+}
