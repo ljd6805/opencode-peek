@@ -4,7 +4,8 @@ const modelID = process.argv[2] ?? "text-model"
 // 1x1 red PNG
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 const s = (await c.session.create({ body: { title: "t" } })).data
-const r = await c.session.prompt({ path: { id: s.id }, body: { model: { providerID: "fake", modelID },
+const agent = process.argv[3]
+const r = await c.session.prompt({ path: { id: s.id }, body: { model: { providerID: "fake", modelID }, ...(agent && { agent }),
   parts: [{ type: "text", text: "What is in this image?" }, { type: "file", mime: "image/png", filename: "clipboard.png", url: `data:image/png;base64,${png}` }] } })
 if (r.error) console.log("ERR", JSON.stringify(r.error))
 const msgs = (await c.session.messages({ path: { id: s.id } })).data

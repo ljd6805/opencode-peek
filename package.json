@@ -1,0 +1,12 @@
+{
+  "name": "opencode-peek",
+  "version": "0.2.0",
+  "description": "peek: hands images pasted into opencode to a vision-capable subagent when the main model is text-only.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "exports": {
+    "./server": "./index.ts"
+  },
+  "files": ["index.ts", "README.md", "LICENSE"]
+}
